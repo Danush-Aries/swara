@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>swara — Indic Text to Speech</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #12181f;
+      --fg: #f5f7fa;
+      --muted: #c7d0da;
+      --accent: #ffd166;
+      --accent-fg: #14181d;
+      --focus: #66d9ff;
+      --border: #3a4653;
+    }
+    * { box-sizing: border-box; }
+    html { font-size: 18px; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+      line-height: 1.6;
+    }
+    /* Visible, high-contrast focus indicator for keyboard users. */
+    :focus-visible {
+      outline: 4px solid var(--focus);
+      outline-offset: 3px;
+    }
+    .skip-link {
+      position: absolute;
+      left: -999px;
+      top: 0;
+      background: var(--accent);
+      color: var(--accent-fg);
+      padding: 0.75rem 1rem;
+      font-weight: 700;
+      z-index: 100;
+    }
+    .skip-link:focus { left: 0; }
+    header {
+      padding: 1.5rem 1rem;
+      border-bottom: 2px solid var(--border);
+    }
+    h1 { margin: 0; font-size: 2rem; }
+    header p { margin: 0.25rem 0 0; color: var(--muted); }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 1.5rem 1rem 4rem;
+    }
+    .field { margin-bottom: 1.5rem; }
+    label {
+      display: block;
+      font-weight: 700;
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+    .hint { color: var(--muted); font-weight: 400; font-size: 0.95rem; }
+    textarea, select, input[type="file"] {
+      width: 100%;
+      font-size: 1.15rem;
+      color: var(--fg);
+      background: var(--panel);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+    }
+    textarea { min-height: 12rem; resize: vertical; }
+    select { min-height: 3.4rem; }
+    .buttons { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 0.5rem; }
+    button {
+      font-size: 1.2rem;
+      font-weight: 700;
+      padding: 1rem 1.75rem;
+      min-height: 3.6rem;
+      min-width: 11rem;
+      border: 2px solid transparent;
+      border-radius: 10px;
+      cursor: pointer;
+      background: var(--accent);
+      color: var(--accent-fg);
+    }
+    button.secondary {
+      background: var(--panel);
+      color: var(--fg);
+      border-color: var(--border);
+    }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .status {
+      margin-top: 1.5rem;
+      padding: 1rem 1.25rem;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel);
+      font-size: 1.1rem;
+      min-height: 1.6rem;
+    }
+    .status[data-kind="error"] { border-color: #ff8a8a; color: #ffd0d0; }
+    .status[data-kind="ok"] { border-color: #8affb0; }
+    audio { width: 100%; margin-top: 1rem; }
+    footer {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 1rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    a { color: var(--focus); }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header>
+    <h1>swara</h1>
+    <p>Free Indic text-to-speech for blind and low-vision students.</p>
+  </header>
+
+  <main id="main">
+    <form id="tts-form" novalidate>
+      <div class="field">
+        <label for="language">Language</label>
+        <select id="language" name="language" aria-describedby="language-hint">
+          <option value="">Loading languages…</option>
+        </select>
+        <p id="language-hint" class="hint">Choose the language of your text.</p>
+      </div>
+
+      <div class="field">
+        <label for="text">Text to read aloud</label>
+        <textarea id="text" name="text" aria-describedby="text-hint"
+          placeholder="Type or paste text here, or upload a file below."></textarea>
+        <p id="text-hint" class="hint">Type, paste, or load text from a file.</p>
+      </div>
+
+      <div class="field">
+        <label for="file">Upload a document (optional)</label>
+        <input id="file" name="file" type="file" accept=".txt,.pdf"
+          aria-describedby="file-hint" />
+        <p id="file-hint" class="hint">Supported: plain text (.txt) and PDF (.pdf). Its text fills the box above.</p>
+      </div>
+
+      <div class="buttons">
+        <button type="submit" id="speak-btn">Speak</button>
+        <button type="button" id="download-btn" class="secondary">Download WAV</button>
+      </div>
+    </form>
+
+    <div id="status" class="status" role="status" aria-live="polite">
+      Ready. Enter text and press Speak.
+    </div>
+
+    <audio id="player" controls aria-label="Synthesized speech player"></audio>
+  </main>
+
+  <footer>
+    <p>swara is open source (MIT). Speech synthesis powered by AI4Bharat models.
+    Default engine is a lightweight mock; set <code>SWARA_ENGINE=parler</code> for real synthesis.</p>
+  </footer>
+
+  <script>
+    (function () {
+      "use strict";
+      const $ = (id) => document.getElementById(id);
+      const form = $("tts-form");
+      const langSelect = $("language");
+      const textArea = $("text");
+      const fileInput = $("file");
+      const speakBtn = $("speak-btn");
+      const downloadBtn = $("download-btn");
+      const statusEl = $("status");
+      const player = $("player");
+
+      let lastBlobUrl = null;
+
+      function setStatus(message, kind) {
+        statusEl.textContent = message;
+        statusEl.setAttribute("data-kind", kind || "info");
+      }
+
+      async function loadLanguages() {
+        try {
+          const res = await fetch("/api/languages");
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          langSelect.innerHTML = "";
+          data.languages.forEach((lang, i) => {
+            const opt = document.createElement("option");
+            opt.value = lang.code;
+            opt.textContent = lang.name;
+            if (lang.code === "hi") opt.selected = true;
+            langSelect.appendChild(opt);
+          });
+          setStatus("Ready. Enter text and press Speak.", "info");
+        } catch (err) {
+          setStatus("Could not load languages: " + err.message, "error");
+        }
+      }
+
+      async function synthesize() {
+        const text = textArea.value.trim();
+        const language = langSelect.value;
+        if (!text) {
+          setStatus("Please enter some text to read aloud.", "error");
+          textArea.focus();
+          return null;
+        }
+        if (!language) {
+          setStatus("Please choose a language.", "error");
+          langSelect.focus();
+          return null;
+        }
+        setStatus("Synthesizing speech… please wait.", "info");
+        speakBtn.disabled = true;
+        downloadBtn.disabled = true;
+        try {
+          const res = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, language, voice: null }),
+          });
+          if (!res.ok) {
+            let detail = "HTTP " + res.status;
+            try { detail = (await res.json()).detail || detail; } catch (e) {}
+            throw new Error(detail);
+          }
+          const blob = await res.blob();
+          if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
+          lastBlobUrl = URL.createObjectURL(blob);
+          return lastBlobUrl;
+        } catch (err) {
+          setStatus("Synthesis failed: " + err.message, "error");
+          return null;
+        } finally {
+          speakBtn.disabled = false;
+          downloadBtn.disabled = false;
+        }
+      }
+
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const url = await synthesize();
+        if (!url) return;
+        player.src = url;
+        setStatus("Playing speech.", "ok");
+        try { await player.play(); } catch (e) { /* autoplay may be blocked */ }
+      });
+
+      downloadBtn.addEventListener("click", async function () {
+        const url = await synthesize();
+        if (!url) return;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "swara.wav";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setStatus("Download started: swara.wav", "ok");
+      });
+
+      fileInput.addEventListener("change", async function () {
+        const file = fileInput.files[0];
+        if (!file) return;
+        setStatus("Reading “" + file.name + "”…", "info");
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+          const res = await fetch("/api/extract", { method: "POST", body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
+          textArea.value = data.text || "";
+          setStatus("Loaded text from “" + file.name + "”. Review it, then press Speak.", "ok");
+          textArea.focus();
+        } catch (err) {
+          setStatus("Could not read file: " + err.message, "error");
+        }
+      });
+
+      loadLanguages();
+    })();
+  </script>
+</body>
+</html>

@@ -2,8 +2,6 @@
 
 **Free Indic text-to-speech for blind and low-vision students.**
 
-![app](docs/swara.png)
-
 `swara` (स्वर — "voice / tone") is an open-source accessibility app that reads
 text aloud in **13 Indian languages** using [AI4Bharat](https://ai4bharat.iitm.ac.in/)'s
 open text-to-speech models. It is built for students who are blind or have low
